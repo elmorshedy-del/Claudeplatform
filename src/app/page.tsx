@@ -4,6 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import { Send, GitBranch, Settings, DollarSign, Loader2, Check, X, GitPullRequest, Trash2, GitMerge } from 'lucide-react';
 import { Message, Session, Settings as SettingsType, CostTracker } from '@/types';
 
+// localStorage keys
+const STORAGE_KEYS = {
+  session: 'claude-coder-session',
+  settings: 'claude-coder-settings',
+  costTracker: 'claude-coder-cost',
+};
+
 export default function Home() {
   // State
   const [messages, setMessages] = useState<Message[]>([]);
@@ -12,6 +19,7 @@ export default function Home() {
   const [session, setSession] = useState<Session>({});
   const [showSettings, setShowSettings] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
+  const [isHydrated, setIsHydrated] = useState(false);
   const [costTracker, setCostTracker] = useState<CostTracker>({
     sessionCost: 0,
     dailyCost: 0,
@@ -31,6 +39,51 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load from localStorage on mount
+  useEffect(() => {
+    const savedSession = localStorage.getItem(STORAGE_KEYS.session);
+    const savedSettings = localStorage.getItem(STORAGE_KEYS.settings);
+    const savedCost = localStorage.getItem(STORAGE_KEYS.costTracker);
+
+    if (savedSession) {
+      const parsed = JSON.parse(savedSession);
+      setSession(parsed);
+      // If we have all required fields, skip setup
+      if (parsed.anthropicKey && parsed.githubToken && parsed.repo) {
+        setShowSetup(false);
+      }
+    }
+    if (savedSettings) {
+      setSettings(JSON.parse(savedSettings));
+    }
+    if (savedCost) {
+      setCostTracker(JSON.parse(savedCost));
+    }
+    
+    setIsHydrated(true);
+  }, []);
+
+  // Save session to localStorage when it changes
+  useEffect(() => {
+    if (isHydrated && session.anthropicKey) {
+      localStorage.setItem(STORAGE_KEYS.session, JSON.stringify(session));
+    }
+  }, [session, isHydrated]);
+
+  // Save settings to localStorage when they change
+  useEffect(() => {
+    if (isHydrated) {
+      localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+    }
+  }, [settings, isHydrated]);
+
+  // Save cost tracker to localStorage when it changes
+  useEffect(() => {
+    if (isHydrated) {
+      localStorage.setItem(STORAGE_KEYS.costTracker, JSON.stringify(costTracker));
+    }
+  }, [costTracker, isHydrated]);
+
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,6 +95,15 @@ export default function Home() {
     if (session.anthropicKey && session.githubToken && session.repo) {
       setShowSetup(false);
     }
+  };
+
+  // Logout / clear credentials
+  const handleLogout = () => {
+    localStorage.removeItem(STORAGE_KEYS.session);
+    setSession({});
+    setShowSetup(true);
+    setMessages([]);
+    setCurrentBranch('');
   };
 
   // Generate branch name from task
@@ -279,6 +341,15 @@ export default function Home() {
   };
 
   // Setup screen
+  if (!isHydrated) {
+    // Show loading while checking localStorage
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-claude-orange" />
+      </div>
+    );
+  }
+
   if (showSetup) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -390,6 +461,14 @@ export default function Home() {
             className="p-2 hover:bg-dark-700 rounded-lg transition-colors"
           >
             <Settings className="w-5 h-5" />
+          </button>
+          
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="text-sm text-gray-400 hover:text-white px-3 py-1.5 hover:bg-dark-700 rounded-lg transition-colors"
+          >
+            Logout
           </button>
         </div>
       </header>
