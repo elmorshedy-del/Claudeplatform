@@ -31,17 +31,19 @@ export async function POST(request: NextRequest) {
       session.repo.name
     );
 
-    const branch = session.currentBranch || session.repo.defaultBranch;
+    // Use default branch for reading (always exists), feature branch for writing
+    const readBranch = session.repo.defaultBranch || 'main';
+    const writeBranch = session.currentBranch || readBranch;
 
-    // Get file tree
-    const fileTree = await github.getFileTree(branch);
+    // Get file tree from main branch (always exists and up-to-date)
+    const fileTree = await github.getFileTree(readBranch);
     const fileTreeStr = formatFileTree(fileTree);
 
     // Smart file loading: find relevant files based on the message
     const relevantPaths = await findRelevantFiles(message, github);
     
-    // Load files with their imports (hybrid approach)
-    const files = await github.getFilesWithImports(relevantPaths, branch, 2);
+    // Load files with their imports (hybrid approach) - from main branch
+    const files = await github.getFilesWithImports(relevantPaths, readBranch, 2);
     
     // Generate context
     const codeContext = generateCodeContext(fileTreeStr, files);
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     if (response.toolCalls) {
       for (const call of response.toolCalls) {
-        const result = await executeToolCall(call, github, branch);
+        const result = await executeToolCall(call, github, writeBranch, readBranch);
         toolResults.push(result);
         
         if (call.name === 'str_replace' || call.name === 'create_file') {
@@ -168,31 +170,35 @@ function extractKeywords(message: string): string[] {
 async function executeToolCall(
   call: any,
   github: GitHubClient,
-  branch: string
+  writeBranch: string,
+  readBranch: string
 ): Promise<{ success: boolean; result?: any; error?: string }> {
   try {
     switch (call.name) {
       case 'read_file': {
-        const file = await github.getFileContent(call.input.path, branch);
+        // Read from main branch (more reliable)
+        const file = await github.getFileContent(call.input.path, readBranch);
         return { success: true, result: file.content };
       }
       
       case 'str_replace': {
+        // Write to feature branch
         const result = await github.applyStrReplace(
           call.input.path,
           call.input.old_str,
           call.input.new_str,
-          branch
+          writeBranch
         );
         return result;
       }
       
       case 'create_file': {
+        // Write to feature branch
         await github.updateFile(
           call.input.path,
           call.input.content,
           `Create ${call.input.path}`,
-          branch
+          writeBranch
         );
         return { success: true };
       }
