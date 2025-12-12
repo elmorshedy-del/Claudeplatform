@@ -12,12 +12,25 @@ export class GitHubClient {
     this.repo = repo;
   }
 
+  // Get the SHA for a branch
+  async getBranchSHA(branch: string): Promise<string> {
+    const { data } = await this.octokit.rest.repos.getBranch({
+      owner: this.owner,
+      repo: this.repo,
+      branch,
+    });
+    return data.commit.sha;
+  }
+
   // Get repository file tree
   async getFileTree(branch: string = 'main'): Promise<RepoTree[]> {
+    // First get the commit SHA for the branch
+    const sha = await this.getBranchSHA(branch);
+    
     const { data } = await this.octokit.rest.git.getTree({
       owner: this.owner,
       repo: this.repo,
-      tree_sha: branch,
+      tree_sha: sha,
       recursive: 'true',
     });
 
